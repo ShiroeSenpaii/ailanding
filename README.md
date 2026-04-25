@@ -2,6 +2,19 @@
 
 Glyphbound is a mobile hidden-phrase roguelike MVP for Android.
 
+## V2 changes
+
+- Cleaner portrait layout.
+- QWERTY-style keyboard docked near the bottom.
+- Less dead vertical space during gameplay.
+- Card-grid relic shop instead of long text boxes.
+- Buy multiple relics in one shop.
+- Reroll shop offers with scaling cost.
+- Leave shop while banking leftover Ink.
+- Phrase answer reveal pause after clears and failures.
+- Rebalanced early scoring so round 1 is less inflated.
+- Safer transition locking to reduce crashy double-tap state issues.
+
 ## Core loop
 
 - Choose a category route.
@@ -14,28 +27,13 @@ Glyphbound is a mobile hidden-phrase roguelike MVP for Android.
 - Choose the next category and keep scaling.
 - Every 3rd round becomes a boss page.
 
-## MVP features
-
-- Main menu
-- Category choice screen
-- Food, Animals, Cinema, and Mythology categories
-- 3-phrase rounds
-- Ink target progress bar
-- Hangman-style cursed effigy HP visual
-- Charge Guess risk mechanic
-- 12 relics
-- Shop after successful rounds
-- Hearts system
-- Boss rounds every 3rd round
-- Best round and best Ink saved locally
-
 ## Build APK on GitHub
 
 1. Open this repo on GitHub.
 2. Go to **Actions**.
-3. Run **Build APK** manually, or push a change.
+3. Run **Build Glyphbound APK** manually, or push a change.
 4. Open the completed run.
-5. Download the `SnakeDifficulty-debug-apk` artifact.
+5. Download the `Glyphbound-debug-apk` artifact.
 6. Install `app-debug.apk` on your Android phone.
 
 This is a debug APK for testing, not a Play Store release build.
