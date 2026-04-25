@@ -1,7 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
         android:allowBackup="true"
-        android:label="Snake Difficulty"
+        android:label="Glyphbound"
         android:theme="@style/AppTheme">
         <activity
             android:name=".MainActivity"
