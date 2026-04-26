@@ -32,11 +32,13 @@ public class MainActivityV2 extends Activity {
         private static final int RESULT = 4;
         private static final int SHOP = 5;
         private static final int GAME_OVER = 6;
+        private static final int STARTER = 7;
 
         private static final int MAX_MISTAKES = 6;
         private static final int PHRASES_PER_ROUND = 3;
         private static final int STARTING_HEARTS = 3;
         private static final int REROLL_BASE_COST = 70;
+        private static final int ROUTE_REROLL_BASE_COST = 45;
 
         private static final String[] QWERTY_ROWS = {"QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"};
 
@@ -63,6 +65,9 @@ public class MainActivityV2 extends Activity {
         private int revealDelayMs = 1800;
         private int roundShopGain;
         private int rerollsThisShop;
+        private int routeRerollsThisRound;
+        private int routeSpinTicks;
+        private int buildBlocksUsed;
         private int lastGain;
         private int pulseColor = 0;
         private long pulseUntil = 0L;
@@ -76,6 +81,7 @@ public class MainActivityV2 extends Activity {
         private boolean vowelShieldUsed;
         private boolean echoUsed;
         private boolean insuranceUsed;
+        private boolean routeSpinning;
 
         private String currentPhrase = "";
         private String revealTitle = "";
@@ -84,6 +90,8 @@ public class MainActivityV2 extends Activity {
         private String resultTitle = "";
         private String resultLine = "";
         private Category activeCategory;
+        private final int[] routeOffers = new int[3];
+        private final int[] starterOffers = new int[3];
         private String[] roundPhrases = new String[0];
         private final boolean[] guessed = new boolean[26];
         private final HashSet<Integer> ownedRelics = new HashSet<>();
@@ -119,6 +127,7 @@ public class MainActivityV2 extends Activity {
             else if (screen == RESULT) drawResult(canvas);
             else if (screen == SHOP) drawShop(canvas);
             else if (screen == GAME_OVER) drawGameOver(canvas);
+            else if (screen == STARTER) drawStarter(canvas);
         }
 
         private void drawBackground(Canvas canvas) {
@@ -142,32 +151,54 @@ public class MainActivityV2 extends Activity {
             button(c, new RectF(50, h(0.80f), getWidth() - 50, h(0.88f)), "START RUN", "START", purple(), true, 32);
         }
 
-        private void drawCategory(Canvas c) {
-            text(c, bossRoundNext() ? "BOSS PAGE ROUTE" : "CHOOSE NEXT PAGE", cx(), h(0.07f), 34, gold(), true, Paint.Align.CENTER);
-            text(c, "Round " + round + "   Hearts " + hearts + "   Shop Ink " + shopInk, cx(), h(0.11f), 21, muted(), false, Paint.Align.CENTER);
-            int cols = 2;
-            float gap = 14;
-            float left = 20;
+        private void drawStarter(Canvas c) {
+            text(c, "PICK STARTING RELIC", cx(), h(0.08f), 33, gold(), true, Paint.Align.CENTER);
+            text(c, "Choose one free relic to shape your build.", cx(), h(0.12f), 19, muted(), false, Paint.Align.CENTER);
+            float left = 22;
             float top = h(0.17f);
-            float cardW = (getWidth() - left * 2 - gap) / 2f;
-            float cardH = h(0.20f);
-            for (int i = 0; i < categories.length; i++) {
-                int row = i / cols;
-                int col = i % cols;
-                float x = left + col * (cardW + gap);
-                float y = top + row * (cardH + gap);
-                Category cat = categories[i];
-                RectF r = new RectF(x, y, x + cardW, y + cardH);
+            float gap = h(0.018f);
+            float cardW = getWidth() - left * 2;
+            float cardH = h(0.17f);
+            for (int i = 0; i < starterOffers.length; i++) {
+                Relic relic = relics[starterOffers[i]];
+                RectF r = new RectF(left, top + i * (cardH + gap), left + cardW, top + i * (cardH + gap) + cardH);
+                panel(c, r.left, r.top, r.right, r.bottom, rgb(39, 33, 54));
+                text(c, relic.name, r.left + 14, r.top + 34, 24, Color.WHITE, true, Paint.Align.LEFT);
+                text(c, relic.group + " BUILD", r.right - 14, r.top + 34, 16, orange(), true, Paint.Align.RIGHT);
+                wrapped(c, relic.shortText, r.left + 14, r.top + 68, r.right - 14, 16, Color.rgb(225, 217, 200));
+                hits.add(new Hit(r, "STARTER_" + i, true));
+            }
+            button(c, new RectF(34, h(0.84f), getWidth() - 34, h(0.91f)), "RANDOM STARTER", "STARTER_RANDOM", rgb(75, 64, 95), true, 22);
+        }
+
+        private void drawCategory(Canvas c) {
+            text(c, bossRoundNext() ? "BOSS PAGE MACHINE" : "ROUTE MACHINE", cx(), h(0.07f), 34, gold(), true, Paint.Align.CENTER);
+            text(c, "Round " + round + "   Hearts " + hearts + "   Shop Ink " + shopInk, cx(), h(0.11f), 21, muted(), false, Paint.Align.CENTER);
+            if (routeSpinning) text(c, "Rolling routes...", cx(), h(0.14f), 18, orange(), true, Paint.Align.CENTER);
+            float gap = h(0.017f);
+            float left = 22;
+            float top = h(0.16f);
+            float cardW = getWidth() - left * 2;
+            float cardH = h(0.15f);
+            for (int i = 0; i < routeOffers.length; i++) {
+                Category cat = categories[routeOffers[i]];
+                float y = top + i * (cardH + gap);
+                RectF r = new RectF(left, y, left + cardW, y + cardH);
                 panel(c, r.left, r.top, r.right, r.bottom, cat.color);
-                text(c, cat.name, r.left + 14, r.top + 34, 25, Color.WHITE, true, Paint.Align.LEFT);
-                text(c, cat.diff, r.left + 14, r.top + 65, 18, gold(), false, Paint.Align.LEFT);
-                text(c, String.format(Locale.US, "%.1fx Ink", cat.mult), r.right - 14, r.top + 65, 18, gold(), true, Paint.Align.RIGHT);
-                wrapped(c, cat.note, r.left + 14, r.top + 96, r.right - 14, 17, Color.rgb(226, 218, 200));
+                text(c, cat.name, r.left + 14, r.top + 33, 25, Color.WHITE, true, Paint.Align.LEFT);
+                text(c, cat.diff, r.left + 14, r.top + 61, 17, gold(), true, Paint.Align.LEFT);
+                text(c, cat.reward, r.right - 14, r.top + 61, 17, orange(), true, Paint.Align.RIGHT);
+                text(c, String.format(Locale.US, "%.2fx Ink", cat.mult), r.right - 14, r.top + 88, 16, muted(), false, Paint.Align.RIGHT);
+                wrapped(c, cat.note, r.left + 14, r.top + 88, r.right - 150, 16, Color.rgb(226, 218, 200));
                 hits.add(new Hit(r, "CAT_" + i, true));
             }
-            panel(c, 24, h(0.66f), getWidth() - 24, h(0.78f), rgb(25, 22, 34));
-            text(c, "Route tip", 44, h(0.70f), 22, gold(), true, Paint.Align.LEFT);
-            text(c, "Pick easier pages to survive, harder pages to farm Ink for the shop.", 44, h(0.735f), 18, muted(), false, Paint.Align.LEFT);
+            int rrCost = routeRerollCost();
+            String rrLabel = rrCost == 0 ? "REROLL ROUTES (FREE SAFETY)" : "REROLL ROUTES (" + rrCost + " INK)";
+            button(c, new RectF(26, h(0.70f), getWidth() - 26, h(0.775f)), rrLabel, "ROUTE_REROLL", rgb(75, 64, 95), shopInk >= rrCost, 20);
+            panel(c, 24, h(0.79f), getWidth() - 24, h(0.91f), rgb(25, 22, 34));
+            text(c, "Route tip", 44, h(0.83f), 22, gold(), true, Paint.Align.LEFT);
+            text(c, "Tap one route to lock it. Hard routes pay more but can drain hearts.", 44, h(0.866f), 18, muted(), false, Paint.Align.LEFT);
+            text(c, buildSummary(), 44, h(0.895f), 16, green(), false, Paint.Align.LEFT);
         }
 
         private void drawGame(Canvas c) {
@@ -183,6 +214,7 @@ public class MainActivityV2 extends Activity {
             text(c, "Hearts " + hearts, getWidth() - 16, 30, 20, red(), true, Paint.Align.RIGHT);
             text(c, activeCategory.name + "   Phrase " + (phraseIndex + 1) + "/" + roundPhrases.length, 16, 58, 17, muted(), false, Paint.Align.LEFT);
             text(c, "x" + String.format(Locale.US, "%.1f", multiplier) + "  Streak " + streak, getWidth() - 16, 58, 17, green(), true, Paint.Align.RIGHT);
+            text(c, buildSummary(), 16, 74, 14, muted(), false, Paint.Align.LEFT);
             RectF bar = new RectF(16, 76, getWidth() - 16, 103);
             paint.setStyle(Paint.Style.FILL);
             paint.setColor(rgb(48, 41, 62));
@@ -285,10 +317,12 @@ public class MainActivityV2 extends Activity {
                 boolean canBuy = shopInk >= relic.cost && !ownedRelics.contains(relic.id);
                 panel(c, r.left, r.top, r.right, r.bottom, canBuy ? rgb(43, 36, 60) : rgb(31, 29, 38));
                 text(c, relic.name, r.left + 12, r.top + 30, 20, canBuy ? Color.WHITE : Color.rgb(135, 130, 145), true, Paint.Align.LEFT);
+                text(c, relic.group, r.right - 12, r.top + 30, 14, canBuy ? gold() : Color.rgb(125, 118, 130), true, Paint.Align.RIGHT);
                 text(c, relic.cost + " Ink", r.left + 12, r.top + 57, 18, canBuy ? orange() : Color.rgb(125, 118, 130), true, Paint.Align.LEFT);
                 wrapped(c, relic.shortText, r.left + 12, r.top + 86, r.right - 12, 16, canBuy ? Color.rgb(224, 216, 200) : Color.rgb(130, 126, 137));
                 hits.add(new Hit(r, "BUY_" + i, canBuy));
             }
+            text(c, buildSummary(), 20, h(0.775f), 15, green(), false, Paint.Align.LEFT);
             float btnY = h(0.80f);
             button(c, new RectF(18, btnY, getWidth() / 2f - 8, btnY + h(0.07f)), "REROLL " + rerollCost(), "REROLL", rgb(75, 64, 95), shopInk >= rerollCost(), 22);
             button(c, new RectF(getWidth() / 2f + 8, btnY, getWidth() - 18, btnY + h(0.07f)), "LEAVE SHOP", "LEAVE_SHOP", purple(), true, 22);
@@ -315,8 +349,11 @@ public class MainActivityV2 extends Activity {
             ownedRelics.clear();
             insuranceUsed = false;
             inputLocked = false;
-            message = "Choose your first page.";
-            screen = CATEGORY;
+            routeSpinning = false;
+            routeSpinTicks = 0;
+            message = "Choose your starting relic.";
+            pickStarterOffers();
+            screen = STARTER;
             invalidate();
         }
 
@@ -348,6 +385,7 @@ public class MainActivityV2 extends Activity {
             luckyUsed = false;
             vowelShieldUsed = false;
             echoUsed = false;
+            buildBlocksUsed = 0;
             lastGain = 0;
             message = bossRound ? "Boss phrase. Earn enough Ink before the page closes." : "Guess letters. Charge when you are confident.";
         }
@@ -372,6 +410,7 @@ public class MainActivityV2 extends Activity {
             int gain = Math.round(base * count * multiplier * activeCategory.mult);
             if (charged) gain *= 2;
             if (hasRelic(1) && count >= 2) gain += Math.round(45 * activeCategory.mult);
+            gain = Math.round(gain * buildOffenseBonus());
             inkRound += gain;
             totalInk += gain;
             lastGain = gain;
@@ -391,7 +430,11 @@ public class MainActivityV2 extends Activity {
 
         private void wrongGuess(char letter, boolean charged) {
             int cost = charged ? 2 : 1;
-            if (hasRelic(0) && !luckyUsed) {
+            if (buildBlocksUsed < buildDefenseBlocks()) {
+                buildBlocksUsed++;
+                cost = 0;
+                message = letter + " missed, but your DEFENSE build blocked it.";
+            } else if (hasRelic(0) && !luckyUsed) {
                 luckyUsed = true;
                 cost = 0;
                 message = letter + " missed, but Lucky Ink blocked it.";
@@ -456,6 +499,7 @@ public class MainActivityV2 extends Activity {
                 int excess = Math.max(0, inkRound - targetInk);
                 roundShopGain = 160 + round * 35 + Math.round(excess * 0.45f);
                 if (hasRelic(5)) roundShopGain = Math.round(roundShopGain * 1.35f);
+                roundShopGain = Math.round(roundShopGain * buildEconomyBonus());
                 shopInk += roundShopGain;
                 resultTitle = bossRound ? "BOSS PAGE BROKEN" : "PAGE SURVIVED";
                 resultLine = "+" + roundShopGain + " shop Ink earned";
@@ -516,11 +560,13 @@ public class MainActivityV2 extends Activity {
         }
 
         private int rerollCost() {
-            return REROLL_BASE_COST + rerollsThisShop * 55;
+            int cost = REROLL_BASE_COST + rerollsThisShop * 55;
+            return Math.max(25, Math.round(cost * buildControlDiscount()));
         }
 
         private void leaveShop() {
             round++;
+            spinRouteOffers(true);
             screen = CATEGORY;
             invalidate();
         }
@@ -530,6 +576,7 @@ public class MainActivityV2 extends Activity {
             else if (hearts <= 0) screen = GAME_OVER;
             else {
                 round++;
+                spinRouteOffers(true);
                 screen = CATEGORY;
             }
             invalidate();
@@ -558,16 +605,185 @@ public class MainActivityV2 extends Activity {
         private void action(String action) {
             if (action.equals("START") || action.equals("RESTART")) startRun();
             else if (action.equals("MENU")) { screen = MENU; invalidate(); }
-            else if (action.startsWith("CAT_")) startRound(categories[Integer.parseInt(action.substring(4))]);
+            else if (action.startsWith("CAT_")) {
+                int slot = Integer.parseInt(action.substring(4));
+                if (slot >= 0 && slot < routeOffers.length) startRound(categories[routeOffers[slot]]);
+            }
             else if (action.startsWith("L_")) guess(action.charAt(2));
             else if (action.equals("CHARGE")) { chargeMode = !chargeMode; invalidate(); }
             else if (action.equals("RESULT_NEXT")) continueResult();
             else if (action.startsWith("BUY_")) buy(Integer.parseInt(action.substring(4)));
             else if (action.equals("REROLL")) reroll();
+            else if (action.equals("ROUTE_REROLL")) rerollRoutes();
             else if (action.equals("LEAVE_SHOP")) leaveShop();
+            else if (action.equals("STARTER_RANDOM")) pickStarter(random.nextInt(starterOffers.length));
+            else if (action.startsWith("STARTER_")) pickStarter(Integer.parseInt(action.substring(8)));
         }
 
         private boolean bossRoundNext() { return round % 3 == 0; }
+        private void rollRouteOffers(boolean resetRerollCount) {
+            if (resetRerollCount) routeRerollsThisRound = 0;
+            for (int i = 0; i < routeOffers.length; i++) {
+                int picked;
+                int tries = 0;
+                do {
+                    picked = rollWeightedCategoryIndex();
+                    tries++;
+                } while (duplicateRoute(picked, i) && tries < 20);
+                routeOffers[i] = picked;
+            }
+        }
+
+        private void spinRouteOffers(final boolean resetRerollCount) {
+            if (resetRerollCount) routeRerollsThisRound = 0;
+            routeSpinning = true;
+            inputLocked = true;
+            routeSpinTicks = 9;
+            spinStep();
+        }
+
+        private void spinStep() {
+            if (routeSpinTicks <= 0) {
+                routeSpinning = false;
+                inputLocked = false;
+                rollRouteOffers(false);
+                invalidate();
+                return;
+            }
+            for (int i = 0; i < routeOffers.length; i++) routeOffers[i] = random.nextInt(categories.length);
+            routeSpinTicks--;
+            invalidate();
+            postDelayed(new Runnable() {
+                @Override public void run() { spinStep(); }
+            }, 80);
+        }
+
+        private void pickStarterOffers() {
+            ArrayList<Integer> pool = new ArrayList<>();
+            for (Relic relic : relics) if (relic.starter) pool.add(relic.id);
+            Collections.shuffle(pool, random);
+            for (int i = 0; i < starterOffers.length; i++) starterOffers[i] = pool.get(i % pool.size());
+        }
+
+        private void pickStarter(int slot) {
+            if (slot >= 0 && slot < starterOffers.length) ownedRelics.add(starterOffers[slot]);
+            message = "Starter relic locked. Choose your first route.";
+            rollRouteOffers(true);
+            spinRouteOffers(true);
+            screen = CATEGORY;
+            invalidate();
+        }
+
+        private boolean duplicateRoute(int picked, int upTo) {
+            for (int i = 0; i < upTo; i++) if (routeOffers[i] == picked) return true;
+            return false;
+        }
+
+        private void rerollRoutes() {
+            int cost = routeRerollCost();
+            if (shopInk < cost) return;
+            shopInk -= cost;
+            routeRerollsThisRound++;
+            spinRouteOffers(false);
+            invalidate();
+        }
+
+        private int routeRerollCost() {
+            boolean safety = round <= 2 && allRoutesTooHard();
+            if (safety && routeRerollsThisRound == 0) return 0;
+            int base = ROUTE_REROLL_BASE_COST + routeRerollsThisRound * 35;
+            if (safety) base = Math.max(20, base - 25);
+            return Math.max(15, Math.round(base * buildControlDiscount()));
+        }
+
+        private boolean allRoutesTooHard() {
+            for (int i : routeOffers) if (categories[i].tier <= 1) return false;
+            return true;
+        }
+
+        private int rollWeightedCategoryIndex() {
+            int[] weights = new int[categories.length];
+            int total = 0;
+            for (int i = 0; i < categories.length; i++) {
+                weights[i] = Math.max(1, tierWeight(categories[i].tier));
+                total += weights[i];
+            }
+            int pick = random.nextInt(Math.max(1, total));
+            int cursor = 0;
+            for (int i = 0; i < weights.length; i++) {
+                cursor += weights[i];
+                if (pick < cursor) return i;
+            }
+            return 0;
+        }
+
+        private int tierWeight(int tier) {
+            if (round <= 2) {
+                if (tier == 0) return 44;
+                if (tier == 1) return 14;
+                if (tier == 2) return 5;
+                if (tier == 3) return 2;
+                return 1;
+            } else if (round <= 4) {
+                if (tier == 0) return 24;
+                if (tier == 1) return 24;
+                if (tier == 2) return 14;
+                if (tier == 3) return 6;
+                return 2;
+            } else if (round <= 7) {
+                if (tier == 0) return 14;
+                if (tier == 1) return 20;
+                if (tier == 2) return 24;
+                if (tier == 3) return 16;
+                return 8;
+            } else {
+                if (tier == 0) return 8;
+                if (tier == 1) return 12;
+                if (tier == 2) return 20;
+                if (tier == 3) return 24;
+                return 22;
+            }
+        }
+
+        private int relicCountByGroup(String group) {
+            int c = 0;
+            for (Integer id : ownedRelics) if (relics[id].group.equals(group)) c++;
+            return c;
+        }
+
+        private float buildOffenseBonus() {
+            int offense = relicCountByGroup("OFFENSE");
+            if (offense >= 3) return 1.16f;
+            if (offense >= 2) return 1.08f;
+            return 1f;
+        }
+
+        private int buildDefenseBlocks() {
+            int defense = relicCountByGroup("DEFENSE");
+            if (defense >= 3) return 2;
+            if (defense >= 2) return 1;
+            return 0;
+        }
+
+        private float buildControlDiscount() {
+            int control = relicCountByGroup("CONTROL");
+            if (control >= 3) return 0.65f;
+            if (control >= 2) return 0.85f;
+            return 1f;
+        }
+
+        private float buildEconomyBonus() {
+            int eco = relicCountByGroup("ECONOMY");
+            if (eco >= 3) return 1.20f;
+            if (eco >= 2) return 1.10f;
+            return 1f;
+        }
+
+        private String buildSummary() {
+            return "Builds  OFF " + relicCountByGroup("OFFENSE") + "  DEF " + relicCountByGroup("DEFENSE") +
+                    "  CTRL " + relicCountByGroup("CONTROL") + "  ECO " + relicCountByGroup("ECONOMY");
+        }
+
         private boolean hasRelic(int id) { return ownedRelics.contains(id); }
         private float cx() { return getWidth() / 2f; }
         private float h(float pct) { return getHeight() * pct; }
@@ -650,27 +866,32 @@ public class MainActivityV2 extends Activity {
 
         private Category[] makeCategories() {
             return new Category[]{
-                    new Category("Food", "Easy", 0.9f, "Safe words. Lower reward.", rgb(58, 82, 53), new String[]{"SPICY NOODLES", "BURGER AND FRIES", "GARLIC BREAD", "CHICKEN WINGS", "FISH AND CHIPS", "HOT SAUCE", "CHEESE PIZZA", "SUNDAY ROAST", "FRIED RICE", "TOMATO SOUP"}),
-                    new Category("Animals", "Easy", 0.9f, "Shorter phrases. Safer route.", rgb(52, 77, 86), new String[]{"BLACK CAT", "GOLDEN EAGLE", "WILD HORSE", "SLEEPY PANDA", "HUNGRY WOLF", "RIVER OTTER", "GIANT SQUID", "DESERT FOX", "ANGRY GOOSE", "TINY FROG"}),
-                    new Category("Cinema", "Medium", 1.0f, "Social movie-ish phrases.", rgb(82, 65, 106), new String[]{"FINAL SCENE", "HERO RETURNS", "DARK THEATER", "LOST TREASURE", "SPACE BATTLE", "SECRET AGENT", "MONSTER ATTACK", "OPENING NIGHT", "CHASE SEQUENCE", "END CREDITS"}),
-                    new Category("Mythology", "Hard", 1.25f, "Harder words. Better payout.", rgb(111, 64, 54), new String[]{"DRAGON FIRE", "ANCIENT ORACLE", "CURSED TEMPLE", "GOLDEN FLEECE", "SHADOW TITAN", "PHOENIX ASHES", "FORGOTTEN GODS", "MINOTAUR MAZE", "CELESTIAL SPEAR", "UNDERWORLD GATE"})
+                    new Category("Common Words", "EASY", "LOW REWARD", 0, 0.85f, "Everyday words with readable letter flow.", rgb(58, 82, 53), new String[]{"WINDOW", "MARKET", "BUTTON", "BOTTLE", "GARDEN", "DINNER", "SUMMER", "POCKET", "TICKET", "ORANGE"}),
+                    new Category("Social Phrases", "EASY", "LOW REWARD", 0, 0.90f, "Short familiar lines for safe starts.", rgb(52, 77, 86), new String[]{"GAME NIGHT", "GROUP CHAT", "BAD JOKE", "FIRST ROUND", "HOUSE RULES", "QUICK TURN", "TABLE TALK", "LUCKY GUESS", "SIDE QUEST", "NO CHILL"}),
+                    new Category("Food", "EASY", "LOW REWARD", 0, 0.90f, "Readable food phrases with clear vowels.", rgb(67, 94, 52), new String[]{"SPICY NOODLES", "GARLIC BREAD", "CHICKEN WINGS", "FISH AND CHIPS", "HOT SAUCE", "CHEESE PIZZA", "FRIED RICE", "TOMATO SOUP", "SUNDAY ROAST", "BURGER FRIES"}),
+                    new Category("Cinema", "MEDIUM", "NORMAL REWARD", 1, 1.00f, "Familiar movie language and phrase rhythm.", rgb(82, 65, 106), new String[]{"FINAL SCENE", "HERO RETURNS", "DARK THEATER", "LOST TREASURE", "SPACE BATTLE", "SECRET AGENT", "MONSTER ATTACK", "OPENING NIGHT", "CHASE SEQUENCE", "END CREDITS"}),
+                    new Category("Long Words", "HARD", "HIGH REWARD", 2, 1.20f, "Longer words test letter economy.", rgb(83, 55, 96), new String[]{"CONSEQUENCE", "OBSERVATION", "CONNECTION", "DEVELOPMENT", "CONVERSATION", "TEMPERATURE", "COMPOSITION", "DISCOVERY", "DICTIONARY", "TRANSACTION"}),
+                    new Category("Rare Letters", "HARD", "HIGH REWARD", 2, 1.25f, "Heavy J Q X Z V K pressure routes.", rgb(109, 69, 45), new String[]{"JAZZ QUARTET", "VEXING QUIZ", "PIXEL JOKER", "QUICK ZEPHYR", "KAYAK VORTEX", "JUNGLE MAZE", "QUIRKY VISION", "ZERO VECTOR", "EXTRA JUMP", "QUIZ KNIGHT"}),
+                    new Category("Technical Words", "EXTREME", "BIG REWARD", 3, 1.35f, "System and science vocabulary bursts.", rgb(61, 73, 112), new String[]{"NEURAL NETWORK", "QUANTUM VECTOR", "KERNEL MODULE", "BINARY SEARCH", "DYNAMIC SYSTEM", "THERMAL CIRCUIT", "SIGNAL PROCESS", "MEMORY LATENCY", "COMPUTE SHADER", "ATOMIC CLOCK"}),
+                    new Category("Extreme Words", "EXTREME", "BIG REWARD", 3, 1.45f, "Very long words for pure fill survival.", rgb(106, 53, 64), new String[]{"MISINTERPRETATION", "CHARACTERIZATION", "INTERDEPENDENCE", "RECONFIGURATION", "OVERCOMPENSATION", "MISCOMMUNICATION", "MICROSCOPICALLY", "UNPREDICTABILITY", "INCONSEQUENTIAL", "DISPROPORTIONATE"}),
+                    new Category("Brutal Words", "BRUTAL", "MAX REWARD", 4, 1.60f, "Awkward dictionary routes with rough letter mix.", rgb(122, 52, 47), new String[]{"SESQUIPEDALIAN", "HYPERBOLICALLY", "SYZYGY PATTERN", "MNEMONIC KNOT", "RHYTHM GLYPH", "SUBDERMATOGLYPHIC", "QUIZZIFY VORTEX", "XYLOZYGOTE", "JUXTAPOSITION", "ZIGGURAT COMPLEX"})
             };
         }
 
         private Relic[] makeRelics() {
             return new Relic[]{
-                    new Relic(0, "Lucky Ink", "First wrong guess each phrase is blocked.", 180),
-                    new Relic(1, "Double Tap", "Letters appearing twice give bonus Ink.", 220),
-                    new Relic(2, "Rare Ink", "J Q X Z V K are worth double.", 260),
-                    new Relic(3, "Vowel Candle", "First wrong vowel each phrase is blocked.", 180),
-                    new Relic(4, "Chain Script", "Correct guesses grow multiplier faster.", 320),
-                    new Relic(5, "Black Candle", "Higher targets. Better shop rewards.", 300),
-                    new Relic(6, "Sharp Consonants", "Consonants give 25 percent more Ink.", 220),
-                    new Relic(7, "Soft Vowels", "Vowels pay no Ink but build multiplier.", 190),
-                    new Relic(8, "Last Breath", "Clear with 1 mistake left for big bonus.", 260),
-                    new Relic(9, "Golden Margin", "Remaining mistakes add more clear bonus.", 320),
-                    new Relic(10, "Echo Letter", "First correct guess reveals extra letter.", 380),
-                    new Relic(11, "Ink Insurance", "First missed target costs no heart.", 380)
+                    new Relic(0, "Lucky Ink", "First wrong guess each phrase is blocked.", 180, "DEFENSE", true),
+                    new Relic(1, "Double Tap", "Letters appearing twice give bonus Ink.", 220, "OFFENSE", true),
+                    new Relic(2, "Rare Ink", "J Q X Z V K are worth double.", 260, "OFFENSE", false),
+                    new Relic(3, "Vowel Candle", "First wrong vowel each phrase is blocked.", 180, "DEFENSE", false),
+                    new Relic(4, "Chain Script", "Correct guesses grow multiplier faster.", 320, "OFFENSE", false),
+                    new Relic(5, "Black Candle", "Higher targets. Better shop rewards.", 300, "ECONOMY", false),
+                    new Relic(6, "Sharp Consonants", "Consonants give 25 percent more Ink.", 220, "OFFENSE", false),
+                    new Relic(7, "Soft Vowels", "Vowels pay no Ink but build multiplier.", 190, "CONTROL", true),
+                    new Relic(8, "Last Breath", "Clear with 1 mistake left for big bonus.", 260, "DEFENSE", false),
+                    new Relic(9, "Golden Margin", "Remaining mistakes add more clear bonus.", 320, "ECONOMY", false),
+                    new Relic(10, "Echo Letter", "First correct guess reveals extra letter.", 380, "CONTROL", false),
+                    new Relic(11, "Ink Insurance", "First missed target costs no heart.", 380, "DEFENSE", false)
             };
         }
 
@@ -777,16 +998,34 @@ public class MainActivityV2 extends Activity {
             Hit(RectF rect, String action, boolean enabled) { this.rect = rect; this.action = action; this.enabled = enabled; }
         }
         private static class Category {
-            final String name, diff, note;
+            final String name, diff, reward, note;
+            final int tier;
             final float mult;
             final int color;
             final String[] phrases;
-            Category(String name, String diff, float mult, String note, int color, String[] phrases) { this.name = name; this.diff = diff; this.mult = mult; this.note = note; this.color = color; this.phrases = phrases; }
+            Category(String name, String diff, String reward, int tier, float mult, String note, int color, String[] phrases) {
+                this.name = name;
+                this.diff = diff;
+                this.reward = reward;
+                this.tier = tier;
+                this.mult = mult;
+                this.note = note;
+                this.color = color;
+                this.phrases = phrases;
+            }
         }
         private static class Relic {
             final int id, cost;
-            final String name, shortText;
-            Relic(int id, String name, String shortText, int cost) { this.id = id; this.name = name; this.shortText = shortText; this.cost = cost; }
+            final String name, shortText, group;
+            final boolean starter;
+            Relic(int id, String name, String shortText, int cost, String group, boolean starter) {
+                this.id = id;
+                this.name = name;
+                this.shortText = shortText;
+                this.cost = cost;
+                this.group = group;
+                this.starter = starter;
+            }
         }
     }
 }
