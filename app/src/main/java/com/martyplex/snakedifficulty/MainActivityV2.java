@@ -37,6 +37,7 @@ public class MainActivityV2 extends Activity {
         private static final int PHRASES_PER_ROUND = 3;
         private static final int STARTING_HEARTS = 3;
         private static final int REROLL_BASE_COST = 70;
+        private static final int ROUTE_REROLL_BASE_COST = 45;
 
         private static final String[] QWERTY_ROWS = {"QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"};
 
@@ -63,6 +64,7 @@ public class MainActivityV2 extends Activity {
         private int revealDelayMs = 1800;
         private int roundShopGain;
         private int rerollsThisShop;
+        private int routeRerollsThisRound;
         private int lastGain;
         private int pulseColor = 0;
         private long pulseUntil = 0L;
@@ -84,6 +86,7 @@ public class MainActivityV2 extends Activity {
         private String resultTitle = "";
         private String resultLine = "";
         private Category activeCategory;
+        private final int[] routeOffers = new int[3];
         private String[] roundPhrases = new String[0];
         private final boolean[] guessed = new boolean[26];
         private final HashSet<Integer> ownedRelics = new HashSet<>();
@@ -143,31 +146,31 @@ public class MainActivityV2 extends Activity {
         }
 
         private void drawCategory(Canvas c) {
-            text(c, bossRoundNext() ? "BOSS PAGE ROUTE" : "CHOOSE NEXT PAGE", cx(), h(0.07f), 34, gold(), true, Paint.Align.CENTER);
+            text(c, bossRoundNext() ? "BOSS PAGE MACHINE" : "ROUTE MACHINE", cx(), h(0.07f), 34, gold(), true, Paint.Align.CENTER);
             text(c, "Round " + round + "   Hearts " + hearts + "   Shop Ink " + shopInk, cx(), h(0.11f), 21, muted(), false, Paint.Align.CENTER);
-            int cols = 2;
-            float gap = 14;
-            float left = 20;
-            float top = h(0.17f);
-            float cardW = (getWidth() - left * 2 - gap) / 2f;
-            float cardH = h(0.20f);
-            for (int i = 0; i < categories.length; i++) {
-                int row = i / cols;
-                int col = i % cols;
-                float x = left + col * (cardW + gap);
-                float y = top + row * (cardH + gap);
-                Category cat = categories[i];
-                RectF r = new RectF(x, y, x + cardW, y + cardH);
+            float gap = h(0.017f);
+            float left = 22;
+            float top = h(0.16f);
+            float cardW = getWidth() - left * 2;
+            float cardH = h(0.15f);
+            for (int i = 0; i < routeOffers.length; i++) {
+                Category cat = categories[routeOffers[i]];
+                float y = top + i * (cardH + gap);
+                RectF r = new RectF(left, y, left + cardW, y + cardH);
                 panel(c, r.left, r.top, r.right, r.bottom, cat.color);
-                text(c, cat.name, r.left + 14, r.top + 34, 25, Color.WHITE, true, Paint.Align.LEFT);
-                text(c, cat.diff, r.left + 14, r.top + 65, 18, gold(), false, Paint.Align.LEFT);
-                text(c, String.format(Locale.US, "%.1fx Ink", cat.mult), r.right - 14, r.top + 65, 18, gold(), true, Paint.Align.RIGHT);
-                wrapped(c, cat.note, r.left + 14, r.top + 96, r.right - 14, 17, Color.rgb(226, 218, 200));
+                text(c, cat.name, r.left + 14, r.top + 33, 25, Color.WHITE, true, Paint.Align.LEFT);
+                text(c, cat.diff, r.left + 14, r.top + 61, 17, gold(), true, Paint.Align.LEFT);
+                text(c, cat.reward, r.right - 14, r.top + 61, 17, orange(), true, Paint.Align.RIGHT);
+                text(c, String.format(Locale.US, "%.2fx Ink", cat.mult), r.right - 14, r.top + 88, 16, muted(), false, Paint.Align.RIGHT);
+                wrapped(c, cat.note, r.left + 14, r.top + 88, r.right - 150, 16, Color.rgb(226, 218, 200));
                 hits.add(new Hit(r, "CAT_" + i, true));
             }
-            panel(c, 24, h(0.66f), getWidth() - 24, h(0.78f), rgb(25, 22, 34));
-            text(c, "Route tip", 44, h(0.70f), 22, gold(), true, Paint.Align.LEFT);
-            text(c, "Pick easier pages to survive, harder pages to farm Ink for the shop.", 44, h(0.735f), 18, muted(), false, Paint.Align.LEFT);
+            int rrCost = routeRerollCost();
+            String rrLabel = rrCost == 0 ? "REROLL ROUTES (FREE SAFETY)" : "REROLL ROUTES (" + rrCost + " INK)";
+            button(c, new RectF(26, h(0.70f), getWidth() - 26, h(0.775f)), rrLabel, "ROUTE_REROLL", rgb(75, 64, 95), shopInk >= rrCost, 20);
+            panel(c, 24, h(0.79f), getWidth() - 24, h(0.91f), rgb(25, 22, 34));
+            text(c, "Route tip", 44, h(0.83f), 22, gold(), true, Paint.Align.LEFT);
+            text(c, "Tap one route to lock it. Hard routes pay more but can drain hearts.", 44, h(0.866f), 18, muted(), false, Paint.Align.LEFT);
         }
 
         private void drawGame(Canvas c) {
@@ -316,6 +319,7 @@ public class MainActivityV2 extends Activity {
             insuranceUsed = false;
             inputLocked = false;
             message = "Choose your first page.";
+            rollRouteOffers(true);
             screen = CATEGORY;
             invalidate();
         }
@@ -521,6 +525,7 @@ public class MainActivityV2 extends Activity {
 
         private void leaveShop() {
             round++;
+            rollRouteOffers(true);
             screen = CATEGORY;
             invalidate();
         }
@@ -530,6 +535,7 @@ public class MainActivityV2 extends Activity {
             else if (hearts <= 0) screen = GAME_OVER;
             else {
                 round++;
+                rollRouteOffers(true);
                 screen = CATEGORY;
             }
             invalidate();
@@ -558,16 +564,104 @@ public class MainActivityV2 extends Activity {
         private void action(String action) {
             if (action.equals("START") || action.equals("RESTART")) startRun();
             else if (action.equals("MENU")) { screen = MENU; invalidate(); }
-            else if (action.startsWith("CAT_")) startRound(categories[Integer.parseInt(action.substring(4))]);
+            else if (action.startsWith("CAT_")) {
+                int slot = Integer.parseInt(action.substring(4));
+                if (slot >= 0 && slot < routeOffers.length) startRound(categories[routeOffers[slot]]);
+            }
             else if (action.startsWith("L_")) guess(action.charAt(2));
             else if (action.equals("CHARGE")) { chargeMode = !chargeMode; invalidate(); }
             else if (action.equals("RESULT_NEXT")) continueResult();
             else if (action.startsWith("BUY_")) buy(Integer.parseInt(action.substring(4)));
             else if (action.equals("REROLL")) reroll();
+            else if (action.equals("ROUTE_REROLL")) rerollRoutes();
             else if (action.equals("LEAVE_SHOP")) leaveShop();
         }
 
         private boolean bossRoundNext() { return round % 3 == 0; }
+        private void rollRouteOffers(boolean resetRerollCount) {
+            if (resetRerollCount) routeRerollsThisRound = 0;
+            for (int i = 0; i < routeOffers.length; i++) {
+                int picked;
+                int tries = 0;
+                do {
+                    picked = rollWeightedCategoryIndex();
+                    tries++;
+                } while (duplicateRoute(picked, i) && tries < 20);
+                routeOffers[i] = picked;
+            }
+        }
+
+        private boolean duplicateRoute(int picked, int upTo) {
+            for (int i = 0; i < upTo; i++) if (routeOffers[i] == picked) return true;
+            return false;
+        }
+
+        private void rerollRoutes() {
+            int cost = routeRerollCost();
+            if (shopInk < cost) return;
+            shopInk -= cost;
+            routeRerollsThisRound++;
+            rollRouteOffers(false);
+            invalidate();
+        }
+
+        private int routeRerollCost() {
+            boolean safety = round <= 2 && allRoutesTooHard();
+            if (safety && routeRerollsThisRound == 0) return 0;
+            int base = ROUTE_REROLL_BASE_COST + routeRerollsThisRound * 35;
+            if (safety) base = Math.max(20, base - 25);
+            return base;
+        }
+
+        private boolean allRoutesTooHard() {
+            for (int i : routeOffers) if (categories[i].tier <= 1) return false;
+            return true;
+        }
+
+        private int rollWeightedCategoryIndex() {
+            int[] weights = new int[categories.length];
+            int total = 0;
+            for (int i = 0; i < categories.length; i++) {
+                weights[i] = Math.max(1, tierWeight(categories[i].tier));
+                total += weights[i];
+            }
+            int pick = random.nextInt(Math.max(1, total));
+            int cursor = 0;
+            for (int i = 0; i < weights.length; i++) {
+                cursor += weights[i];
+                if (pick < cursor) return i;
+            }
+            return 0;
+        }
+
+        private int tierWeight(int tier) {
+            if (round <= 2) {
+                if (tier == 0) return 44;
+                if (tier == 1) return 14;
+                if (tier == 2) return 5;
+                if (tier == 3) return 2;
+                return 1;
+            } else if (round <= 4) {
+                if (tier == 0) return 24;
+                if (tier == 1) return 24;
+                if (tier == 2) return 14;
+                if (tier == 3) return 6;
+                return 2;
+            } else if (round <= 7) {
+                if (tier == 0) return 14;
+                if (tier == 1) return 20;
+                if (tier == 2) return 24;
+                if (tier == 3) return 16;
+                return 8;
+            } else {
+                if (tier == 0) return 8;
+                if (tier == 1) return 12;
+                if (tier == 2) return 20;
+                if (tier == 3) return 24;
+                return 22;
+            }
+        }
+
         private boolean hasRelic(int id) { return ownedRelics.contains(id); }
         private float cx() { return getWidth() / 2f; }
         private float h(float pct) { return getHeight() * pct; }
@@ -650,10 +744,15 @@ public class MainActivityV2 extends Activity {
 
         private Category[] makeCategories() {
             return new Category[]{
-                    new Category("Food", "Easy", 0.9f, "Safe words. Lower reward.", rgb(58, 82, 53), new String[]{"SPICY NOODLES", "BURGER AND FRIES", "GARLIC BREAD", "CHICKEN WINGS", "FISH AND CHIPS", "HOT SAUCE", "CHEESE PIZZA", "SUNDAY ROAST", "FRIED RICE", "TOMATO SOUP"}),
-                    new Category("Animals", "Easy", 0.9f, "Shorter phrases. Safer route.", rgb(52, 77, 86), new String[]{"BLACK CAT", "GOLDEN EAGLE", "WILD HORSE", "SLEEPY PANDA", "HUNGRY WOLF", "RIVER OTTER", "GIANT SQUID", "DESERT FOX", "ANGRY GOOSE", "TINY FROG"}),
-                    new Category("Cinema", "Medium", 1.0f, "Social movie-ish phrases.", rgb(82, 65, 106), new String[]{"FINAL SCENE", "HERO RETURNS", "DARK THEATER", "LOST TREASURE", "SPACE BATTLE", "SECRET AGENT", "MONSTER ATTACK", "OPENING NIGHT", "CHASE SEQUENCE", "END CREDITS"}),
-                    new Category("Mythology", "Hard", 1.25f, "Harder words. Better payout.", rgb(111, 64, 54), new String[]{"DRAGON FIRE", "ANCIENT ORACLE", "CURSED TEMPLE", "GOLDEN FLEECE", "SHADOW TITAN", "PHOENIX ASHES", "FORGOTTEN GODS", "MINOTAUR MAZE", "CELESTIAL SPEAR", "UNDERWORLD GATE"})
+                    new Category("Common Words", "EASY", "LOW REWARD", 0, 0.85f, "Everyday words with readable letter flow.", rgb(58, 82, 53), new String[]{"WINDOW", "MARKET", "BUTTON", "BOTTLE", "GARDEN", "DINNER", "SUMMER", "POCKET", "TICKET", "ORANGE"}),
+                    new Category("Social Phrases", "EASY", "LOW REWARD", 0, 0.90f, "Short familiar lines for safe starts.", rgb(52, 77, 86), new String[]{"GAME NIGHT", "GROUP CHAT", "BAD JOKE", "FIRST ROUND", "HOUSE RULES", "QUICK TURN", "TABLE TALK", "LUCKY GUESS", "SIDE QUEST", "NO CHILL"}),
+                    new Category("Food", "EASY", "LOW REWARD", 0, 0.90f, "Readable food phrases with clear vowels.", rgb(67, 94, 52), new String[]{"SPICY NOODLES", "GARLIC BREAD", "CHICKEN WINGS", "FISH AND CHIPS", "HOT SAUCE", "CHEESE PIZZA", "FRIED RICE", "TOMATO SOUP", "SUNDAY ROAST", "BURGER FRIES"}),
+                    new Category("Cinema", "MEDIUM", "NORMAL REWARD", 1, 1.00f, "Familiar movie language and phrase rhythm.", rgb(82, 65, 106), new String[]{"FINAL SCENE", "HERO RETURNS", "DARK THEATER", "LOST TREASURE", "SPACE BATTLE", "SECRET AGENT", "MONSTER ATTACK", "OPENING NIGHT", "CHASE SEQUENCE", "END CREDITS"}),
+                    new Category("Long Words", "HARD", "HIGH REWARD", 2, 1.20f, "Longer words test letter economy.", rgb(83, 55, 96), new String[]{"CONSEQUENCE", "OBSERVATION", "CONNECTION", "DEVELOPMENT", "CONVERSATION", "TEMPERATURE", "COMPOSITION", "DISCOVERY", "DICTIONARY", "TRANSACTION"}),
+                    new Category("Rare Letters", "HARD", "HIGH REWARD", 2, 1.25f, "Heavy J Q X Z V K pressure routes.", rgb(109, 69, 45), new String[]{"JAZZ QUARTET", "VEXING QUIZ", "PIXEL JOKER", "QUICK ZEPHYR", "KAYAK VORTEX", "JUNGLE MAZE", "QUIRKY VISION", "ZERO VECTOR", "EXTRA JUMP", "QUIZ KNIGHT"}),
+                    new Category("Technical Words", "EXTREME", "BIG REWARD", 3, 1.35f, "System and science vocabulary bursts.", rgb(61, 73, 112), new String[]{"NEURAL NETWORK", "QUANTUM VECTOR", "KERNEL MODULE", "BINARY SEARCH", "DYNAMIC SYSTEM", "THERMAL CIRCUIT", "SIGNAL PROCESS", "MEMORY LATENCY", "COMPUTE SHADER", "ATOMIC CLOCK"}),
+                    new Category("Extreme Words", "EXTREME", "BIG REWARD", 3, 1.45f, "Very long words for pure fill survival.", rgb(106, 53, 64), new String[]{"MISINTERPRETATION", "CHARACTERIZATION", "INTERDEPENDENCE", "RECONFIGURATION", "OVERCOMPENSATION", "MISCOMMUNICATION", "MICROSCOPICALLY", "UNPREDICTABILITY", "INCONSEQUENTIAL", "DISPROPORTIONATE"}),
+                    new Category("Brutal Words", "BRUTAL", "MAX REWARD", 4, 1.60f, "Awkward dictionary routes with rough letter mix.", rgb(122, 52, 47), new String[]{"SESQUIPEDALIAN", "HYPERBOLICALLY", "SYZYGY PATTERN", "MNEMONIC KNOT", "RHYTHM GLYPH", "SUBDERMATOGLYPHIC", "QUIZZIFY VORTEX", "XYLOZYGOTE", "JUXTAPOSITION", "ZIGGURAT COMPLEX"})
             };
         }
 
@@ -777,11 +876,21 @@ public class MainActivityV2 extends Activity {
             Hit(RectF rect, String action, boolean enabled) { this.rect = rect; this.action = action; this.enabled = enabled; }
         }
         private static class Category {
-            final String name, diff, note;
+            final String name, diff, reward, note;
+            final int tier;
             final float mult;
             final int color;
             final String[] phrases;
-            Category(String name, String diff, float mult, String note, int color, String[] phrases) { this.name = name; this.diff = diff; this.mult = mult; this.note = note; this.color = color; this.phrases = phrases; }
+            Category(String name, String diff, String reward, int tier, float mult, String note, int color, String[] phrases) {
+                this.name = name;
+                this.diff = diff;
+                this.reward = reward;
+                this.tier = tier;
+                this.mult = mult;
+                this.note = note;
+                this.color = color;
+                this.phrases = phrases;
+            }
         }
         private static class Relic {
             final int id, cost;
