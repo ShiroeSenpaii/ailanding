@@ -14,10 +14,12 @@ Glyphbound is a mobile hidden-phrase roguelike MVP for Android.
 - Phrase answer reveal pause after clears and failures.
 - Rebalanced early scoring so round 1 is less inflated.
 - Safer transition locking to reduce crashy double-tap state issues.
+- Route Machine category roll with 3 weighted route cards each round.
+- Route rerolls that cost Shop Ink, including an early-round safety reroll when all routes are too hard.
 
 ## Core loop
 
-- Choose a category route.
+- Roll 3 route cards in the Route Machine, then lock one in.
 - Clear 3 cursed hidden phrases per round.
 - Guess letters to earn Ink and build multiplier.
 - Use Charge Guess for risky double Ink.
